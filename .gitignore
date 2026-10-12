@@ -1,0 +1,31 @@
+bin/
+obj/
+/packages/
+riderModule.iml
+/_ReSharper.Caches/
+docs/
+
+# Build outputs, package caches and local artifacts
+**/bin/
+**/obj/
+artifacts/
+TestResults/
+**/TestResults/
+*.nupkg
+*.snupkg
+
+# JetBrains Rider and Visual Studio
+.idea/
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+_ReSharper*/
+*.sln.iml
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store

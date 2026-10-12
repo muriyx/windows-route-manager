@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="WindowsRouteManager.csproj" />
+  <Folder Name="/tests/">
+    <Project Path="tests/WindowsRouteManager.Tests/WindowsRouteManager.Tests.csproj" />
+  </Folder>
+</Solution>
