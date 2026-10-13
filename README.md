@@ -11,10 +11,7 @@ The app uses native Windows VPN routing, so your routes work even when the app i
 
 ## Requirements
 
-- Windows 10+
-- [.NET 10 Desktop Runtime, x64](https://dotnet.microsoft.com/en-us/download/dotnet/10.0).
-
-
+- Windows 10+ (x64).
 
 ## Reliability and limitations
 
