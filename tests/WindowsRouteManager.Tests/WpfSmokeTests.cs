@@ -42,7 +42,8 @@ public sealed class WpfSmokeTests
                 Render((FrameworkElement)window.Content, 1100, 760, "vpn-routes");
                 Render((FrameworkElement)window.Content, 800, 640, "vpn-routes-small");
                 var tabs = Descendants((FrameworkElement)window.Content).OfType<TabControl>().Single();
-                Assert.Null(((TabItem)tabs.Items[0]).Content);
+                var systemRoutesTab = Assert.Single(tabs.Items.Cast<TabItem>(), tab => Equals(tab.Header, "System Routes"));
+                Assert.Null(systemRoutesTab.Content);
                 Assert.Equal(3, Descendants((FrameworkElement)window.Content).OfType<DataGrid>().Single().Items.Count);
                 var editor = new RouteEditorWindow(null);
                 ((RouteEditorViewModel)editor.DataContext).Destination = "192.168.1.25/24";

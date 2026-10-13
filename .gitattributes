@@ -1,0 +1,2 @@
+# Keep checkout line endings aligned with .editorconfig, including on Windows.
+* text=auto eol=lf
