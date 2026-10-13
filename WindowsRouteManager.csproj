@@ -13,6 +13,14 @@
         <ApplicationManifest>app.manifest</ApplicationManifest>
     </PropertyGroup>
 
+    <PropertyGroup>
+        <PublishRuntimeIdentifier>win-x64</PublishRuntimeIdentifier>
+        <PublishSelfContained>true</PublishSelfContained>
+        <PublishSingleFile>true</PublishSingleFile>
+        <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+        <DebugType>embedded</DebugType>
+    </PropertyGroup>
+
     <ItemGroup>
         <Compile Remove="tests\**\*.cs" />
         <EmbeddedResource Remove="tests\**\*" />

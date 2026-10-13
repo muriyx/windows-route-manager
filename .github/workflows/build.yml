@@ -31,21 +31,26 @@ jobs:
         run: dotnet build WindowsRouteManager.slnx -c Release --no-restore
       - name: Test with fake networking only
         run: dotnet test WindowsRouteManager.slnx -c Release --no-build --no-restore --logger trx --results-directory TestResults
-      - name: Publish framework-dependent x64
-        run: dotnet publish WindowsRouteManager.csproj -c Release -r win-x64 --self-contained false -o artifacts/win-x64
-      - name: Package
+      - name: Publish self-contained single-file x64
+        run: dotnet publish WindowsRouteManager.csproj -c Release -o artifacts/win-x64
+      - name: Verify single-file output and prepare artifacts
         shell: pwsh
         run: |
+          $files = @(Get-ChildItem -LiteralPath artifacts/win-x64 -Force)
+          if ($files.Count -ne 1 -or $files[0].PSIsContainer -or $files[0].Name -cne 'WindowsRouteManager.exe') {
+            throw 'Publish must produce only WindowsRouteManager.exe.'
+          }
+          $hash = (Get-FileHash -LiteralPath artifacts/win-x64/WindowsRouteManager.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  WindowsRouteManager.exe" | Set-Content artifacts/win-x64/WindowsRouteManager.exe.sha256
           Copy-Item -LiteralPath README.md, LICENSE -Destination artifacts/win-x64
-          Compress-Archive -Path artifacts/win-x64/* -DestinationPath artifacts/WindowsRouteManager-win-x64.zip
-          $hash = (Get-FileHash artifacts/WindowsRouteManager-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  WindowsRouteManager-win-x64.zip" | Set-Content artifacts/WindowsRouteManager-win-x64.zip.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: WindowsRouteManager-win-x64
           path: |
-            artifacts/WindowsRouteManager-win-x64.zip
-            artifacts/WindowsRouteManager-win-x64.zip.sha256
+            artifacts/win-x64/WindowsRouteManager.exe
+            artifacts/win-x64/WindowsRouteManager.exe.sha256
+            artifacts/win-x64/README.md
+            artifacts/win-x64/LICENSE
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
@@ -77,4 +82,4 @@ jobs:
           $project = [xml](Get-Content WindowsRouteManager.csproj)
           $expectedTag = 'v' + $project.Project.PropertyGroup.Version
           if ($env:RELEASE_TAG -cne $expectedTag) { throw "Tag must match project version: $expectedTag" }
-          gh release create $env:RELEASE_TAG artifacts/WindowsRouteManager-win-x64.zip artifacts/WindowsRouteManager-win-x64.zip.sha256 --verify-tag --draft --title "Windows Route Manager $env:RELEASE_TAG" --notes-file docs/RELEASING.md
+          gh release create $env:RELEASE_TAG artifacts/WindowsRouteManager.exe artifacts/WindowsRouteManager.exe.sha256 artifacts/README.md artifacts/LICENSE --verify-tag --draft --title "Windows Route Manager $env:RELEASE_TAG" --notes-file docs/RELEASING.md
