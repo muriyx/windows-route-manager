@@ -5,6 +5,9 @@ namespace WindowsRouteManager.Tests;
 // All subprocesses here execute inert test scripts. No VpnClient commands or imports.
 public sealed class PowerShellRunnerTests
 {
+    // Allow cold PowerShell startup on shared CI runners in tests that do not verify deadlines.
+    private static readonly TimeSpan ScriptCompletionTimeout = TimeSpan.FromSeconds(45);
+
     [Fact]
     public async Task DeadlineTerminatesAnUnresponsiveProcess()
     {
@@ -31,7 +34,7 @@ public sealed class PowerShellRunnerTests
             $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
             [Console]::Out.Write((@{ Success=$true; Data=@{Name=$request.Name}; Warnings=@() } | ConvertTo-Json -Compress))
             """;
-        var runner = new PowerShellRunner(TimeSpan.FromSeconds(10), script);
+        var runner = new PowerShellRunner(ScriptCompletionTimeout, script);
         const string name = "Тест ' ; $(throw)";
         var result = await runner.RunAsync(new PowerShellRequest(VpnOperation.GetProfile, name), default);
         Assert.Equal(name, result.Data.GetProperty("Name").GetString());
@@ -44,7 +47,7 @@ public sealed class PowerShellRunnerTests
             [Console]::Error.Write('Inert test failure')
             [Console]::Out.Write('{"Success":true,"Data":[],"Warnings":[]}')
             """;
-        var runner = new PowerShellRunner(TimeSpan.FromSeconds(10), script);
+        var runner = new PowerShellRunner(ScriptCompletionTimeout, script);
         var error = await Assert.ThrowsAsync<PowerShellException>(() => runner.RunAsync(new PowerShellRequest(VpnOperation.ListProfiles), default));
         Assert.Contains("Inert test failure", error.Message);
     }

@@ -19,6 +19,7 @@ The app uses native Windows VPN routing, so your routes work even when the app i
 - Existing IPv6 routes are counted but hidden and preserved.
 - Changing a metric removes the exact expected route and adds it again. If adding fails, the app attempts to restore the old metric only if the prefix is still vacant, then verifies recovery. This sequence is **not atomic**; process termination, timeouts or concurrent external edits can leave a partial result. Refresh and inspect the error before retrying.
 - Before mutation, the script checks the saved metric or split setting against the last read value. This detects stale data but cannot lock out other editors.
+- Comments are stored in `route-comments.json` next to `WindowsRouteManager.exe`. The file is created when a comment is first saved; the containing folder must be writable. Move or back up this file with the EXE to keep your comments.
 
 
 ## Contributing and license

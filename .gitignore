@@ -29,3 +29,8 @@ _ReSharper*/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Portable route comments
+route-comments.json
+route-comments.json.lock
+route-comments.json.*.tmp

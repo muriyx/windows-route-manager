@@ -4,7 +4,7 @@ namespace windows_route_manager.Services.Interfaces;
 
 public interface IUserInteraction
 {
-    VpnRoute? EditRoute(VpnRoute? existing);
+    AnnotatedRoute? EditRoute(AnnotatedRoute? existing);
     bool Confirm(string title, string message);
     void ShowError(string title, string message);
 }

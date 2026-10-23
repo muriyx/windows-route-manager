@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.IO;
 using System.Windows;
 using windows_route_manager.Services;
 using windows_route_manager.Services.PowerShell;
@@ -19,7 +20,8 @@ public partial class MainWindow : Window
         if (viewModel is null)
         {
             var service = new VpnProfileService(new PowerShellRunner());
-            viewModel = new VpnRoutesViewModel(service, service, new WindowInteraction(this));
+            var comments = new JsonRouteCommentStore(Path.Combine(AppContext.BaseDirectory, "route-comments.json"));
+            viewModel = new VpnRoutesViewModel(service, service, new WindowInteraction(this), comments);
         }
         _viewModel = viewModel;
         DataContext = _viewModel;
@@ -35,7 +37,7 @@ public partial class MainWindow : Window
         if (_viewModel.IsWriting)
         {
             e.Cancel = true;
-            MessageBox.Show(this, "Please wait for the VPN write and verification to finish before closing.", "Operation in progress", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, "Please wait for saving and any VPN verification to finish before closing.", "Operation in progress", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         _viewModel.CancelRead();

@@ -66,4 +66,19 @@ public sealed class ValidationTests
         Assert.Equal("10.0.1.0/24", editor.Validate()!.DestinationPrefix);
         Assert.Empty(editor.Error);
     }
+
+    [Fact]
+    public void EditorPreservesCommentSeparatelyFromWindowsRoute()
+    {
+        var route = new VpnRoute(Ipv4Prefix.Parse("10.0.0.0/8"), 15);
+        var editor = new RouteEditorViewModel(new AnnotatedRoute(route, "Existing comment"));
+        Assert.False(editor.IsNew);
+        Assert.Equal("Existing comment", editor.Comment);
+        editor.Comment = "Remote office\nСерверы";
+        var result = editor.Validate();
+        Assert.Equal(route, result!.Route);
+        Assert.Equal(editor.Comment, result.Comment);
+        editor.Comment = " \r\n ";
+        Assert.Equal("", editor.Validate()!.Comment);
+    }
 }
