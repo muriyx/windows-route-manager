@@ -35,7 +35,10 @@ public sealed class WpfSmokeTests
                     Routes = [ViewModelTests.Route("10.0.0.0/8"), ViewModelTests.Route("172.16.0.0/12") with { Metric = 15 }, ViewModelTests.Route("192.168.100.0/24")]
                 };
                 var ui = new ViewModelTests.FakeUi();
-                var vm = new VpnRoutesViewModel(fake, fake, ui);
+                var comments = new ViewModelTests.FakeComments();
+                comments.Comments.Add(new(fake.Profiles[0].Id, fake.Profiles[0].Routes[0].Prefix, "Internal development servers"));
+                comments.Comments.Add(new(fake.Profiles[0].Id, fake.Profiles[0].Routes[1].Prefix, "A long description of the remote office network that should be truncated in the table.\nAdditional details appear in the tooltip."));
+                var vm = new VpnRoutesViewModel(fake, fake, ui, comments);
                 // The fake completes synchronously, so no dispatcher pump or real system read is needed.
                 Assert.True(vm.RefreshCommand.ExecuteAsync().IsCompletedSuccessfully);
                 var window = new MainWindow(vm);
@@ -45,9 +48,13 @@ public sealed class WpfSmokeTests
                 var systemRoutesTab = Assert.Single(tabs.Items.Cast<TabItem>(), tab => Equals(tab.Header, "System Routes"));
                 Assert.Null(systemRoutesTab.Content);
                 Assert.Equal(3, Descendants((FrameworkElement)window.Content).OfType<DataGrid>().Single().Items.Count);
+                Assert.Contains(Descendants((FrameworkElement)window.Content).OfType<DataGrid>().Single().Columns,
+                    column => Equals(column.Header, "Comment"));
                 var editor = new RouteEditorWindow(null);
                 ((RouteEditorViewModel)editor.DataContext).Destination = "192.168.1.25/24";
-                Render((FrameworkElement)editor.Content, 490, 410, "route-editor");
+                ((RouteEditorViewModel)editor.DataContext).Comment = "Remote office\nInternal services";
+                Render((FrameworkElement)editor.Content, 490, 560, "route-editor");
+                Assert.Contains(Descendants((FrameworkElement)editor.Content).OfType<TextBox>(), box => box.Text.Contains("Remote office"));
                 editor.Close();
                 window.Close();
                 listener.Flush();

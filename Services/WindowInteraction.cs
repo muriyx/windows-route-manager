@@ -7,7 +7,7 @@ namespace windows_route_manager.Services;
 
 public sealed class WindowInteraction(Window owner) : IUserInteraction
 {
-    public VpnRoute? EditRoute(VpnRoute? existing)
+    public AnnotatedRoute? EditRoute(AnnotatedRoute? existing)
     {
         var dialog = new RouteEditorWindow(existing) { Owner = owner };
         return dialog.ShowDialog() == true ? dialog.Result : null;

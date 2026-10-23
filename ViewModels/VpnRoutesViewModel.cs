@@ -11,9 +11,11 @@ public sealed class VpnRoutesViewModel : ObservableObject
     private readonly IVpnProfileReader _reader;
     private readonly IVpnProfileWriter _writer;
     private readonly IUserInteraction _interaction;
+    private readonly IRouteCommentStore _commentStore;
+    private IReadOnlyList<RouteComment> _comments = [];
     private CancellationTokenSource? _operation;
     private VpnProfile? _selectedProfile;
-    private VpnRoute? _selectedRoute;
+    private AnnotatedRoute? _selectedRoute;
     private bool _isBusy;
     private bool _isWriting;
     private string _filter = "";
@@ -21,11 +23,12 @@ public sealed class VpnRoutesViewModel : ObservableObject
     private string _warnings = "";
     private bool _splitTunneling;
 
-    public VpnRoutesViewModel(IVpnProfileReader reader, IVpnProfileWriter writer, IUserInteraction interaction)
+    public VpnRoutesViewModel(IVpnProfileReader reader, IVpnProfileWriter writer, IUserInteraction interaction, IRouteCommentStore commentStore)
     {
         _reader = reader;
         _writer = writer;
         _interaction = interaction;
+        _commentStore = commentStore;
         RefreshCommand = new AsyncCommand(() => RunAsync("Reading VPN profiles…", RefreshCoreAsync), ReportError, () => !IsBusy);
         AddCommand = new AsyncCommand(AddAsync, ReportError, () => CanEdit);
         EditCommand = new AsyncCommand(EditAsync, ReportError, () => CanEdit && SelectedRoute is not null);
@@ -36,7 +39,7 @@ public sealed class VpnRoutesViewModel : ObservableObject
     }
 
     public ObservableCollection<VpnProfile> Profiles { get; } = [];
-    public ObservableCollection<VpnRoute> Routes { get; } = [];
+    public ObservableCollection<AnnotatedRoute> Routes { get; } = [];
     public AsyncCommand RefreshCommand { get; }
     public AsyncCommand AddCommand { get; }
     public AsyncCommand EditCommand { get; }
@@ -57,7 +60,7 @@ public sealed class VpnRoutesViewModel : ObservableObject
             UpdateCommands();
         }
     }
-    public VpnRoute? SelectedRoute
+    public AnnotatedRoute? SelectedRoute
     {
         get => _selectedRoute;
         set { if (SetProperty(ref _selectedRoute, value)) UpdateCommands(); }
@@ -95,7 +98,12 @@ public sealed class VpnRoutesViewModel : ObservableObject
         SelectedRoute = null;
         Routes.Clear();
         foreach (var route in SelectedProfile?.Routes ?? [])
-            if (route.DestinationPrefix.Contains(Filter.Trim(), StringComparison.OrdinalIgnoreCase)) Routes.Add(route);
+        {
+            var comment = GetComment(SelectedProfile!.Id, route.Prefix);
+            if (route.DestinationPrefix.Contains(Filter.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                comment.Contains(Filter.Trim(), StringComparison.OrdinalIgnoreCase))
+                Routes.Add(new AnnotatedRoute(route, comment));
+        }
         OnPropertyChanged(nameof(RouteCount));
         OnPropertyChanged(nameof(EmptyMessage));
     }
@@ -104,11 +112,19 @@ public sealed class VpnRoutesViewModel : ObservableObject
     {
         var selectedId = SelectedProfile?.Id;
         var result = await _reader.GetProfilesAsync(cancellationToken);
+        var warnings = result.Warnings.ToList();
+        try { _comments = await _commentStore.LoadAsync(cancellationToken); }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception exception)
+        {
+            _comments = [];
+            warnings.Add("Route comments could not be loaded. The existing JSON file will not be overwritten unless it can be read successfully. " + exception.Message);
+        }
         SelectedProfile = null;
         Profiles.Clear();
         foreach (var profile in result.Profiles) Profiles.Add(profile);
         SelectedProfile = Profiles.FirstOrDefault(p => p.Id == selectedId) ?? Profiles.FirstOrDefault();
-        Warnings = string.Join("\n", result.Warnings);
+        Warnings = string.Join("\n", warnings);
         Status = $"Read {Profiles.Count} profile(s) at {DateTime.Now:t}. {RouteCount}.";
     }
 
@@ -122,8 +138,10 @@ public sealed class VpnRoutesViewModel : ObservableObject
             _interaction.ShowError("Duplicate route", $"{route.DestinationPrefix} already exists in {profile.DisplayName}. Edit its metric instead.");
             return;
         }
-        if (!ConfirmDefault(route, "Add")) return;
-        await RunAsync("Saving VPN route…", token => _writer.AddRouteAsync(profile.Id, route, token), true);
+        if (!ConfirmDefault(route.Route, "Add")) return;
+        var commentChanged = route.Comment != GetComment(profile.Id, route.Prefix);
+        if (await RunAsync("Saving VPN route…", token => _writer.AddRouteAsync(profile.Id, route.Route, token), true, commentChanged) && commentChanged)
+            await SaveCommentAsync(profile.Id, route.Prefix, route.Comment, true);
     }
 
     private async Task EditAsync()
@@ -131,14 +149,21 @@ public sealed class VpnRoutesViewModel : ObservableObject
         var profile = SelectedProfile!;
         var original = SelectedRoute!;
         var edited = _interaction.EditRoute(original);
-        if (edited is null || edited.Metric == original.Metric) return;
+        if (edited is null || edited == original) return;
         if (edited.Prefix != original.Prefix)
         {
             _interaction.ShowError("Invalid edit", "Only the metric can be edited. Add a new route to change the destination.");
             return;
         }
-        if (!ConfirmDefault(original, "Change metric for")) return;
-        await RunAsync("Updating route metric…", token => _writer.ChangeMetricAsync(profile.Id, original, edited.Metric, token), true);
+        var commentChanged = edited.Comment != original.Comment;
+        if (edited.Metric == original.Metric)
+        {
+            if (commentChanged) await SaveCommentAsync(profile.Id, original.Prefix, edited.Comment);
+            return;
+        }
+        if (!ConfirmDefault(original.Route, "Change metric for")) return;
+        if (await RunAsync("Updating route metric…", token => _writer.ChangeMetricAsync(profile.Id, original.Route, edited.Metric, token), true, commentChanged) && commentChanged)
+            await SaveCommentAsync(profile.Id, original.Prefix, edited.Comment, true);
     }
 
     private async Task RemoveAsync()
@@ -147,7 +172,8 @@ public sealed class VpnRoutesViewModel : ObservableObject
         var route = SelectedRoute!;
         var warning = route.Prefix.IsDefault ? "\n\nThis is a DEFAULT ROUTE (0.0.0.0/0). Removing it can change Internet access and traffic routing." : "";
         if (!_interaction.Confirm("Remove VPN route", $"Remove {route.DestinationPrefix} from {profile.DisplayName}?{warning}")) return;
-        await RunAsync("Removing VPN route…", token => _writer.RemoveRouteAsync(profile.Id, route, token), true);
+        if (await RunAsync("Removing VPN route…", token => _writer.RemoveRouteAsync(profile.Id, route.Route, token), true) && route.Comment.Length > 0)
+            await SaveCommentAsync(profile.Id, route.Prefix, "", true);
     }
 
     private async Task ApplySplitAsync()
@@ -168,9 +194,41 @@ public sealed class VpnRoutesViewModel : ObservableObject
     private bool ConfirmDefault(VpnRoute route, string action) => !route.Prefix.IsDefault ||
         _interaction.Confirm("Default route warning", $"{action} 0.0.0.0/0? This route matches ALL IPv4 destinations and can change Internet access or override split tunneling.");
 
-    private async Task RunAsync(string message, Func<CancellationToken, Task> action, bool writing = false)
+    private string GetComment(VpnProfileId profile, Ipv4Prefix prefix) =>
+        _comments.FirstOrDefault(entry => entry.Profile == profile && entry.Prefix == prefix)?.Comment ?? "";
+
+    private async Task SaveCommentAsync(VpnProfileId profile, Ipv4Prefix prefix, string comment, bool vpnChanged = false)
     {
-        if (IsBusy) return;
+        IsBusy = true;
+        IsWriting = true;
+        Status = "Saving route comment…";
+        UpdateCommands();
+        try
+        {
+            await _commentStore.SetAsync(profile, prefix, comment, CancellationToken.None);
+            _comments = _comments.Where(entry => entry.Profile != profile || entry.Prefix != prefix).ToArray();
+            if (!string.IsNullOrWhiteSpace(comment)) _comments = [.. _comments, new RouteComment(profile, prefix, comment)];
+            UpdateRoutes();
+            Status = vpnChanged
+                ? "VPN change saved and re-read from Windows; comment saved next to the EXE. Reconnect an active VPN to apply route changes."
+                : "Comment saved next to the EXE.";
+        }
+        catch (Exception exception)
+        {
+            Status = vpnChanged ? "The VPN change was saved, but the comment could not be saved." : "The comment could not be saved.";
+            _interaction.ShowError("Route comment save failed", Status + "\nThe folder containing the EXE must be writable and route-comments.json must be valid.\n" + exception.Message);
+        }
+        finally
+        {
+            IsBusy = false;
+            IsWriting = false;
+            UpdateCommands();
+        }
+    }
+
+    private async Task<bool> RunAsync(string message, Func<CancellationToken, Task> action, bool writing = false, bool pendingComment = false)
+    {
+        if (IsBusy) return false;
         var targetId = SelectedProfile?.Id;
         using var operation = new CancellationTokenSource();
         _operation = operation;
@@ -208,8 +266,10 @@ public sealed class VpnRoutesViewModel : ObservableObject
         else if (failure is not null)
         {
             Status = writing ? "The change could not be fully confirmed. Review the current profile and error details." : "Could not read VPN profiles.";
-            _interaction.ShowError(writing ? "VPN change failed" : "VPN refresh failed", Describe(failure));
+            _interaction.ShowError(writing ? "VPN change failed" : "VPN refresh failed", Describe(failure) +
+                (pendingComment ? "\nComment changes were not saved." : ""));
         }
+        return failure is null;
     }
 
     private void ClearSnapshot() { SelectedProfile = null; Profiles.Clear(); }
